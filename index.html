@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>사다리 게임 - 순서 정하기</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <h1>사다리 게임 - 순서 정하기</h1>
+
+        <div class="input-section">
+            <h2>학생 정보 입력</h2>
+            <div class="input-row">
+                <input type="text" id="studentId" placeholder="학번 (예: 2024001)">
+                <input type="text" id="studentName" placeholder="이름 (예: 홍길동)">
+                <button id="addStudent">학생 추가</button>
+            </div>
+            <div class="file-upload-section">
+                <label for="csvFile" class="file-label">
+                    <span>📁 CSV 파일 선택</span>
+                    <input type="file" id="csvFile" accept=".csv" style="display: none;">
+                </label>
+                <span id="fileName" class="file-name">파일을 선택하지 않았습니다</span>
+                <button id="loadCsv" disabled>CSV 불러오기</button>
+            </div>
+            <div id="studentList" class="student-list"></div>
+            <button id="startGame" class="start-btn" disabled>사다리 게임 시작</button>
+        </div>
+
+        <div class="game-section" id="gameSection" style="display: none;">
+            <div class="control-buttons">
+                <button id="replayGame">다시 추첨</button>
+                <button id="resetGame">새 게임</button>
+            </div>
+            <div class="canvas-container">
+                <canvas id="ladderCanvas"></canvas>
+            </div>
+            <div id="results" class="results"></div>
+            <div class="export-section" id="exportSection" style="display: none;">
+                <button id="exportCsv">📥 결과 CSV로 내보내기</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>
