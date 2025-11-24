@@ -7,7 +7,9 @@ let results = new Map();
 let canvasLayout = {
     padding: 80,
     columnSpacing: 120,
-    rowSpacing: 40
+    rowSpacing: 40,
+    portalRadius: 16,
+    portalOffset: 26
 };
 
 // 학생별 색상 배열
@@ -173,17 +175,20 @@ function generateLadder() {
 
     // 각 행마다 가로줄 생성 여부 결정
     for (let row = 0; row < numRows; row++) {
-        const bridges = [];
+        const bridges = new Array(numStudents).fill(false);
 
         // 각 세로줄 사이에 가로줄을 랜덤하게 배치
-        for (let col = 0; col < numStudents - 1; col++) {
+        for (let col = 0; col < numStudents; col++) {
             // 이전 가로줄과 겹치지 않도록 (연속된 가로줄 방지)
-            if (col === 0) {
-                bridges.push(Math.random() > 0.5);
-            } else {
-                // 이전 가로줄이 있으면 현재는 없게
-                bridges.push(!bridges[col - 1] && Math.random() > 0.5);
+            if (col > 0 && bridges[col - 1]) {
+                continue;
             }
+
+            bridges[col] = Math.random() > 0.5;
+        }
+
+        if (bridges[0] && bridges[numStudents - 1]) {
+            bridges[numStudents - 1] = false;
         }
 
         ladderData.push(bridges);
@@ -219,6 +224,8 @@ function drawLadder() {
     canvasLayout.padding = padding;
     canvasLayout.columnSpacing = columnSpacing;
     canvasLayout.rowSpacing = rowSpacing;
+    canvasLayout.portalRadius = Math.min(18, columnSpacing / 4);
+    canvasLayout.portalOffset = canvasLayout.portalRadius + Math.min(24, columnSpacing / 3);
 
     const canvasWidth = padding * 2 + (numStudents - 1) * columnSpacing;
     const canvasHeight = padding * 2 + ladderData.length * rowSpacing;
@@ -247,14 +254,14 @@ function drawLadder() {
     ladderData.forEach((bridges, row) => {
         const y = padding + (row + 1) * rowSpacing;
         bridges.forEach((hasBridge, col) => {
-            if (hasBridge) {
-                const x1 = padding + col * columnSpacing;
-                const x2 = padding + (col + 1) * columnSpacing;
-                ctx.beginPath();
-                ctx.moveTo(x1, y);
-                ctx.lineTo(x2, y);
-                ctx.stroke();
-            }
+            if (!hasBridge) return;
+
+            const nextCol = (col + 1) % numStudents;
+            const x1 = padding + col * columnSpacing;
+            const x2 = padding + nextCol * columnSpacing;
+            const wrapsAround = col === numStudents - 1 && nextCol === 0;
+
+            drawBridgeSegment(x1, x2, y, wrapsAround, canvasLayout);
         });
     });
 
@@ -285,6 +292,7 @@ async function traceLadder(startCol, color) {
 
     // canvasLayout에서 레이아웃 정보 가져오기
     const { padding, columnSpacing, rowSpacing } = canvasLayout;
+    const numStudents = students.length;
 
     let currentCol = startCol;
 
@@ -307,19 +315,35 @@ async function traceLadder(startCol, color) {
         // 가로줄 확인
         const bridges = ladderData[row];
 
-        // 왼쪽 확인
-        if (currentCol > 0 && bridges[currentCol - 1]) {
-            const targetX = padding + (currentCol - 1) * columnSpacing;
-            await animateLine(x, y, targetX, y, strokeStyle, lineWidth);
+        const leftIndex = (currentCol - 1 + numStudents) % numStudents;
+        const canMoveLeft = bridges[leftIndex];
+
+        if (canMoveLeft) {
+            const targetCol = leftIndex;
+            const targetX = padding + targetCol * columnSpacing;
+            const wrapsLeft = currentCol === 0 && targetCol === numStudents - 1;
+
+            if (wrapsLeft) {
+                await animatePortalBridgeMove(x, y, targetX, canvasLayout, strokeStyle, lineWidth);
+            } else {
+                await animateLine(x, y, targetX, y, strokeStyle, lineWidth);
+            }
+
             x = targetX;
-            currentCol--;
-        }
-        // 오른쪽 확인
-        else if (currentCol < students.length - 1 && bridges[currentCol]) {
-            const targetX = padding + (currentCol + 1) * columnSpacing;
-            await animateLine(x, y, targetX, y, strokeStyle, lineWidth);
+            currentCol = targetCol;
+        } else if (bridges[currentCol]) {
+            const targetCol = (currentCol + 1) % numStudents;
+            const targetX = padding + targetCol * columnSpacing;
+            const wrapsRight = currentCol === numStudents - 1 && targetCol === 0;
+
+            if (wrapsRight) {
+                await animatePortalBridgeMove(x, y, targetX, canvasLayout, strokeStyle, lineWidth);
+            } else {
+                await animateLine(x, y, targetX, y, strokeStyle, lineWidth);
+            }
+
             x = targetX;
-            currentCol++;
+            currentCol = targetCol;
         }
     }
 
@@ -336,7 +360,7 @@ async function traceLadder(startCol, color) {
 function animateLine(x1, y1, x2, y2, strokeStyle, lineWidth) {
     return new Promise((resolve) => {
         const distance = Math.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2);
-        const steps = Math.ceil(distance / 3);
+        const steps = Math.ceil(distance / 6);
         const dx = (x2 - x1) / steps;
         const dy = (y2 - y1) / steps;
 
@@ -366,6 +390,108 @@ function animateLine(x1, y1, x2, y2, strokeStyle, lineWidth) {
 
         step();
     });
+}
+
+async function animatePortalBridgeMove(xStart, startY, xEnd, layout, strokeStyle, lineWidth) {
+    const radius = layout.portalRadius ?? 16;
+    const spacing = layout.columnSpacing || 120;
+    const offset = layout.portalOffset ?? Math.max(radius + 10, spacing / 2);
+
+    const leftColumnX = Math.min(xStart, xEnd);
+    const rightColumnX = Math.max(xStart, xEnd);
+    const leftCenterX = leftColumnX - offset;
+    const rightCenterX = rightColumnX + offset;
+    const leftEntryX = leftCenterX + radius;
+    const rightEntryX = rightCenterX - radius;
+
+    const startsAtLeft = xStart <= xEnd;
+    const entryX = startsAtLeft ? leftEntryX : rightEntryX;
+    const exitX = startsAtLeft ? rightEntryX : leftEntryX;
+
+    await animateLine(xStart, startY, entryX, startY, strokeStyle, lineWidth);
+    await new Promise(resolve => setTimeout(resolve, 80));
+    await animateLine(exitX, startY, xEnd, startY, strokeStyle, lineWidth);
+}
+
+function drawBridgeSegment(xStart, xEnd, y, wrapsAround, layout) {
+    if (!wrapsAround) {
+        ctx.beginPath();
+        ctx.moveTo(xStart, y);
+        ctx.lineTo(xEnd, y);
+        ctx.stroke();
+        return;
+    }
+
+    drawPortalBridgeSegment(xStart, xEnd, y, layout);
+}
+
+function drawPortalBridgeSegment(xStart, xEnd, y, layout) {
+    const radius = layout.portalRadius ?? 16;
+    const spacing = layout.columnSpacing || 120;
+    const offset = layout.portalOffset ?? Math.max(radius + 10, spacing / 2);
+
+    const leftColumnX = Math.min(xStart, xEnd);
+    const rightColumnX = Math.max(xStart, xEnd);
+
+    const leftCenterX = leftColumnX - offset;
+    const rightCenterX = rightColumnX + offset;
+    const leftEntryX = leftCenterX + radius;
+    const rightEntryX = rightCenterX - radius;
+
+    ctx.save();
+    ctx.lineWidth = 2;
+    ctx.setLineDash([]);
+    ctx.beginPath();
+    ctx.moveTo(leftColumnX, y);
+    ctx.lineTo(leftEntryX, y);
+    ctx.moveTo(rightEntryX, y);
+    ctx.lineTo(rightColumnX, y);
+    ctx.stroke();
+    ctx.restore();
+
+    ctx.save();
+    ctx.strokeStyle = 'rgba(102, 126, 234, 0.35)';
+    ctx.setLineDash([6, 5]);
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(leftCenterX, y);
+    ctx.bezierCurveTo(
+        (leftCenterX + rightCenterX) / 2,
+        y - radius * 1.5,
+        (leftCenterX + rightCenterX) / 2,
+        y + radius * 1.5,
+        rightCenterX,
+        y
+    );
+    ctx.stroke();
+    ctx.restore();
+
+    drawPortalCircle(leftCenterX, y, radius);
+    drawPortalCircle(rightCenterX, y, radius);
+}
+
+function drawPortalCircle(centerX, centerY, radius) {
+    ctx.save();
+    const gradient = ctx.createRadialGradient(centerX, centerY, radius * 0.2, centerX, centerY, radius);
+    gradient.addColorStop(0, '#f8fafc');
+    gradient.addColorStop(0.5, '#c7d2fe');
+    gradient.addColorStop(1, '#7886ff');
+
+    ctx.fillStyle = gradient;
+    ctx.strokeStyle = '#4c51bf';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(centerX, centerY, radius, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.8)';
+    ctx.setLineDash([3, 3]);
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.arc(centerX, centerY, radius * 0.55, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
 }
 
 // 결과 표시
